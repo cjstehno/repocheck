@@ -12,3 +12,5 @@ repocheck-test-*
 *.o
 *.obj
 *.lst
+*.iml
+.idea/*
