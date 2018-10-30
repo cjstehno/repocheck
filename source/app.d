@@ -82,7 +82,7 @@ private void verify(Dependency[] dependencies, string remoteRepo){
     missings.sort();
 
     foreach(string dep; missings){
-        writeln("Missing: ", dep);
+        writeln(" - ", dep);
     }
 }
 
