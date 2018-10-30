@@ -5,6 +5,7 @@ import std.algorithm: canFind;
 import std.string;
 import std.getopt;
 import std.datetime.stopwatch : StopWatch, AutoStart;
+import std.net.curl;
 
 struct Dependency {
     string group;
@@ -62,8 +63,32 @@ private Dependency[] scan(string localRepo){
 }
 
 private void verify(Dependency[] dependencies, string remoteRepo){
-    // HEAD -> REPO/GROUP/ARTIFACT/VERSION/ARTIFACT-VERSION-CLASSIFIER.TYPE
-    // report status
+    foreach(Dependency dep; dependencies){
+        bool exists = existsInRepo(dep, remoteRepo);
+        writeln(dep, ": ", exists);
+    }
+}
+
+private bool existsInRepo(Dependency dependency, string repo){
+    string artifactFile = dependency.artifact ~ "-" ~ dependency.vers;
+    if( dependency.classifier != null && !dependency.classifier.empty){
+        artifactFile = artifactFile ~ "-" ~ dependency.classifier;
+    }
+    artifactFile = artifactFile ~ "." ~ dependency.type;
+
+    string artifactUrl = dependency.group ~ "/" ~ dependency.artifact ~ "/" ~ dependency.vers ~ "/" ~ artifactFile;
+
+    writeln("URL: ", artifactUrl);
+
+    auto http = HTTP();
+    http.handle.set(CurlOption.ssl_verifypeer, 0);
+    http.method = HTTP.Method.head;
+    http.url = repo ~ "/" ~ artifactUrl;
+    http.perform();
+
+    HTTP.StatusLine status = http.statusLine();
+    writeln("Status(", artifactUrl, "): ", status);
+    return status.code == 200;
 }
 
 private Dependency parseDependency(string artifactPath){
