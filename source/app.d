@@ -6,6 +6,8 @@ import std.string;
 import std.getopt;
 import std.datetime.stopwatch : StopWatch, AutoStart;
 import std.net.curl;
+import std.parallelism;
+import core.atomic;
 
 struct Dependency {
     string group;
@@ -26,6 +28,8 @@ void main(string[] args) {
     );
 
     // FIXME: look into pointers/reference usage
+    // FIXME: use string formatters
+    // FIXME: sort the output
 
     if(!localRepo.empty){
         auto timer = StopWatch(AutoStart.yes);
@@ -38,10 +42,10 @@ void main(string[] args) {
         writeln("Comparing local artifacts to ", remoteRepo, "...");
         verify(dependencies, remoteRepo);
 
-        long ellapsed = timer.peek.total!"msecs";
+        long ellapsed = timer.peek.total!"msecs" / 1000;
         timer.stop();
 
-        writeln("Done (", ellapsed, "ms).");
+        writeln("Done (", ellapsed, " seconds).");
 
     } else {
         defaultGetoptPrinter("A tool for resolving differences between local and remote repos.",helpInfo.options);
@@ -63,10 +67,17 @@ private Dependency[] scan(string localRepo){
 }
 
 private void verify(Dependency[] dependencies, string remoteRepo){
-    foreach(Dependency dep; dependencies){
+    shared int missingCount = 0;
+
+    foreach(Dependency dep; parallel(dependencies)){
         bool exists = existsInRepo(dep, remoteRepo);
-        writeln(dep, ": ", exists);
+        if( !exists ){
+            writeln("Missing: ", dep.group, ":", dep.artifact, ":", dep.vers, ":", dep.classifier, ":", dep.type);
+            missingCount.atomicOp!"+="(1);
+        }
     }
+
+    writeln("Found ", missingCount, " artifacts in the local repo that are not in the remote repo.");
 }
 
 private bool existsInRepo(Dependency dependency, string repo){
@@ -77,8 +88,7 @@ private bool existsInRepo(Dependency dependency, string repo){
     artifactFile = artifactFile ~ "." ~ dependency.type;
 
     string artifactUrl = dependency.group ~ "/" ~ dependency.artifact ~ "/" ~ dependency.vers ~ "/" ~ artifactFile;
-
-    writeln("URL: ", artifactUrl);
+    //writeln("URL: ", artifactUrl);
 
     auto http = HTTP();
     http.handle.set(CurlOption.ssl_verifypeer, 0);
@@ -87,7 +97,7 @@ private bool existsInRepo(Dependency dependency, string repo){
     http.perform();
 
     HTTP.StatusLine status = http.statusLine();
-    writeln("Status(", artifactUrl, "): ", status);
+    //writeln("Status(", artifactUrl, "): ", status);
     return status.code == 200;
 }
 
