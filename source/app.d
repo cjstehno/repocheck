@@ -8,6 +8,7 @@ import std.datetime.stopwatch : StopWatch, AutoStart;
 import std.net.curl;
 import std.parallelism;
 import core.atomic;
+import std.algorithm.sorting;
 
 struct Dependency {
     string group;
@@ -30,6 +31,7 @@ void main(string[] args) {
     // FIXME: look into pointers/reference usage
     // FIXME: use string formatters
     // FIXME: sort the output
+    // FIXME: convert the struct to a class with methods
 
     if(!localRepo.empty){
         auto timer = StopWatch(AutoStart.yes);
@@ -67,17 +69,21 @@ private Dependency[] scan(string localRepo){
 }
 
 private void verify(Dependency[] dependencies, string remoteRepo){
-    shared int missingCount = 0;
+    string[] missings = [];
 
     foreach(Dependency dep; parallel(dependencies)){
-        bool exists = existsInRepo(dep, remoteRepo);
-        if( !exists ){
-            writeln("Missing: ", dep.group, ":", dep.artifact, ":", dep.vers, ":", dep.classifier, ":", dep.type);
-            missingCount.atomicOp!"+="(1);
+        if( !existsInRepo(dep, remoteRepo) ){
+            missings ~= (replace(dep.group, "/", ".") ~ ":" ~ dep.artifact ~ ":" ~ dep.vers ~ ":" ~ dep.classifier ~ ":" ~ dep.type);
         }
     }
 
-    writeln("Found ", missingCount, " artifacts in the local repo that are not in the remote repo.");
+    writeln("Found ", missings.length, " artifacts in the local repo that are not in the remote repo.");
+
+    missings.sort();
+
+    foreach(string dep; missings){
+        writeln("Missing: ", dep);
+    }
 }
 
 private bool existsInRepo(Dependency dependency, string repo){
@@ -87,38 +93,35 @@ private bool existsInRepo(Dependency dependency, string repo){
     }
     artifactFile = artifactFile ~ "." ~ dependency.type;
 
-    string artifactUrl = dependency.group ~ "/" ~ dependency.artifact ~ "/" ~ dependency.vers ~ "/" ~ artifactFile;
-    //writeln("URL: ", artifactUrl);
-
     auto http = HTTP();
     http.handle.set(CurlOption.ssl_verifypeer, 0);
     http.method = HTTP.Method.head;
-    http.url = repo ~ "/" ~ artifactUrl;
+    http.url = repo ~ "/" ~ dependency.group ~ "/" ~ dependency.artifact ~ "/" ~ dependency.vers ~ "/" ~ artifactFile;
     http.perform();
 
-    HTTP.StatusLine status = http.statusLine();
-    //writeln("Status(", artifactUrl, "): ", status);
-    return status.code == 200;
+    return http.statusLine().code == 200;
 }
 
 private Dependency parseDependency(string artifactPath){
-    auto ext = extension(artifactPath);
-    auto parts = split(artifactPath, "\\");
+    // path: GROUP(a/b/c)/NAME/VERSION/NAME-VERSION-CLASSIFIER.TYPE
+    auto parts = split(artifactPath, "\\"); // TODO: can I make this the platform separator?
 
-    string artifactGroup = join(parts[0..($-3)], "/");
-    string artifactName = parts[$-3];
+    string depGroup = join(parts[0..($-3)], "/");   // GROUP(a/b/c)
+    string depName = parts[$-3].dup;                // NAME
+    string depVers = parts[$-2].dup;                // VERSION
+    string depFile = parts[$-1].dup;                // NAME-VERSION-CLASSIFIER.TYPE
+    string depType = extension(artifactPath)[1..$]; // TYPE
 
-    string artifactVersion = parts[$-2];
-    string artifactFile = parts[$-1];
-
-    string classifier = null;
-    if ( count(artifactFile, "-") > 2 ){
-        auto start = artifactFile.lastIndexOf("-") + 1;
-        auto end = artifactFile.lastIndexOf(".");
-        classifier = artifactFile[start..end];
-
-        artifactVersion = replace(artifactVersion, "-" ~ classifier, "");
+    string depClassifier = replace(replace(depFile, depName ~ "-" ~ depVers, ""), "." ~ depType, "");
+    if( depClassifier.startsWith("-") ){
+        depClassifier = depClassifier[1..$];
     }
 
-    return Dependency(artifactGroup, artifactName, artifactVersion, classifier, ext[1..$]);
+    return Dependency(depGroup, depName, depVers, depClassifier, depType);
+}
+
+// FIXME: break this into another file?
+unittest {
+    assert( parseDependency("org\\foo\\bar\\baz\\1.2.3\\baz-1.2.3.jar") == Dependency( "org/foo/bar", "baz", "1.2.3", null, "jar" ) , "Dependency without classifier.");
+    assert( parseDependency("org\\foo\\bar\\baz\\1.2.3\\baz-1.2.3-bing.jar") == Dependency( "org/foo/bar", "baz", "1.2.3", "bing", "jar" ) , "Dependency with classifier.");
 }

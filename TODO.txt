@@ -1,4 +1,0 @@
-x iterate through the local repository
-x resolve all artifacts in coordinate form
-- hit specified artifactory url (HEAD) to determine if artifact exists
-- report results
