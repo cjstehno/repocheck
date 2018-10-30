@@ -4,6 +4,7 @@ import std.path;
 import std.algorithm: canFind;
 import std.string;
 import std.getopt;
+import std.datetime.stopwatch : StopWatch, AutoStart;
 
 struct Dependency {
     string group;
@@ -23,29 +24,46 @@ void main(string[] args) {
         "remote", "URL for the remote repo.", &remoteRepo
     );
 
+    // FIXME: look into pointers/reference usage
+
     if(!localRepo.empty){
+        auto timer = StopWatch(AutoStart.yes);
+
         writeln("Scanning ", localRepo, "...");
 
-        int prefixLen = localRepo.length;
-        int resolved = 0;
+        Dependency[] dependencies = scan(localRepo);
+        writeln("Resvoled: " , dependencies.length, " artifacts.");
 
-        foreach (string path; dirEntries(localRepo, SpanMode.depth)){
-            if (isFile(path) && canFind([".pom", ".jar" ], extension(path))){
-                auto artifactPath = path[prefixLen+1..$];
+        writeln("Comparing local artifacts to ", remoteRepo, "...");
+        verify(dependencies, remoteRepo);
 
-                Dependency dependency = parseDependency(artifactPath);
+        long ellapsed = timer.peek.total!"msecs";
+        timer.stop();
 
-                writeln(artifactPath, " --> ", dependency);
-                resolved++;
-            }
-        }
-
-        writeln("=========================================");
-        writeln("Resvoled: " , resolved, " artifacts.");
+        writeln("Done (", ellapsed, "ms).");
 
     } else {
         defaultGetoptPrinter("A tool for resolving differences between local and remote repos.",helpInfo.options);
     }
+}
+
+private Dependency[] scan(string localRepo){
+    int prefixLen = localRepo.length;
+
+    Dependency[] dependencies = [];
+
+    foreach (string path; dirEntries(localRepo, SpanMode.depth)){
+        if (isFile(path) && canFind([".pom", ".jar" ], extension(path))){
+            dependencies ~= parseDependency(path[prefixLen+1..$]);
+        }
+    }
+
+    return dependencies;
+}
+
+private void verify(Dependency[] dependencies, string remoteRepo){
+    // HEAD -> REPO/GROUP/ARTIFACT/VERSION/ARTIFACT-VERSION-CLASSIFIER.TYPE
+    // report status
 }
 
 private Dependency parseDependency(string artifactPath){
@@ -69,8 +87,3 @@ private Dependency parseDependency(string artifactPath){
 
     return Dependency(artifactGroup, artifactName, artifactVersion, classifier, ext[1..$]);
 }
-
-/*
-    group:artfiact:version:type:classifier
-    ROOT/GROUP/ARTIFACT/VERSION/ARTIFACT-VERSION-CLASSIFIER.TYPE
- */
