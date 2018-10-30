@@ -1,0 +1,9 @@
+{
+	"name": "repocheck",
+	"authors": [
+		"Christopher J. Stehno"
+	],
+	"description": "Resolves missing dependencies between local and remote maven repos.",
+	"copyright": "Copyright © 2018, Christopher J. Stehno",
+	"license": "proprietary"
+}
