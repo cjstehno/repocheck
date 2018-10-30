@@ -21,24 +21,26 @@ struct Dependency {
 void main(string[] args) {
     string localRepo = "";
     string remoteRepo = "";
+    string[] ignoredGroups = [];
 
     auto helpInfo = getopt(
         args,
         "local", "Path to the local repo.", &localRepo,
-        "remote", "URL for the remote repo.", &remoteRepo
+        "remote", "URL for the remote repo.", &remoteRepo,
+        "ignore", "One or more groups to be ignored by prefix (format: a.b.c).", &ignoredGroups
     );
 
     // FIXME: look into pointers/reference usage
     // FIXME: use string formatters
-    // FIXME: sort the output
     // FIXME: convert the struct to a class with methods
+    // FIXME: normalize the file separator
 
     if(!localRepo.empty){
         auto timer = StopWatch(AutoStart.yes);
 
         writeln("Scanning ", localRepo, "...");
 
-        Dependency[] dependencies = scan(localRepo);
+        Dependency[] dependencies = scan(localRepo, ignoredGroups);
         writeln("Resvoled: " , dependencies.length, " artifacts.");
 
         writeln("Comparing local artifacts to ", remoteRepo, "...");
@@ -54,18 +56,32 @@ void main(string[] args) {
     }
 }
 
-private Dependency[] scan(string localRepo){
+private Dependency[] scan(string localRepo, string[] ignoredGroups){
     int prefixLen = localRepo.length;
 
     Dependency[] dependencies = [];
 
     foreach (string path; dirEntries(localRepo, SpanMode.depth)){
         if (isFile(path) && canFind([".pom", ".jar" ], extension(path))){
-            dependencies ~= parseDependency(path[prefixLen+1..$]);
+            string artifactPath = path[prefixLen+1..$];
+            if( !isInIgnoredGroup(artifactPath, ignoredGroups) ){
+                dependencies ~= parseDependency(artifactPath);
+            }
         }
     }
 
     return dependencies;
+}
+
+private bool isInIgnoredGroup(string path, string[] groups){
+    bool ignored = false;
+    foreach(string g; groups){
+        if( path.startsWith(replace(g, ".", "\\")) ){
+            ignored = true;
+            break;
+        }
+    }
+    return ignored;
 }
 
 private void verify(Dependency[] dependencies, string remoteRepo){
@@ -122,6 +138,11 @@ private Dependency parseDependency(string artifactPath){
 
 // FIXME: break this into another file?
 unittest {
+    // dependency path pasing
     assert( parseDependency("org\\foo\\bar\\baz\\1.2.3\\baz-1.2.3.jar") == Dependency( "org/foo/bar", "baz", "1.2.3", null, "jar" ) , "Dependency without classifier.");
     assert( parseDependency("org\\foo\\bar\\baz\\1.2.3\\baz-1.2.3-bing.jar") == Dependency( "org/foo/bar", "baz", "1.2.3", "bing", "jar" ) , "Dependency with classifier.");
+
+    // ignored groups
+    assert(isInIgnoredGroup("a\\b\\c\\name\\version\\name-version.jar", []) == false, "No groups ignored should return false.");
+    assert(isInIgnoredGroup("a\\b\\c\\name\\version\\name-version.jar", ["a.b.c"]) == true, "Should return true for matching group.");
 }
