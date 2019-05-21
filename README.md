@@ -2,6 +2,8 @@
 
 Tool for comparing contents of a local maven repository with a specified remote repository to determine missing artifacts.
 
+> NOTE: For a more current version of this tool - see my [depdiff](https://github.com/cjstehno/depdiff) project.
+
 ## Usage
 
 Run the check with:
